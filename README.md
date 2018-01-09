@@ -152,7 +152,7 @@ The asterisk character `*' means wildcard.
   name, file name or file name suffix.
   
 - If you use the `*' character literally, you must escape it with the
-  back slash `\'.
+  back slash.
 
 <!--
 # Local Variables:
