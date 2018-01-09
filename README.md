@@ -145,8 +145,8 @@ It must be started from the slash `/'.
 
 The asterisk character `*' means wildcard.
 
-- The `*' character must be only one.
-  e.g. /foo*/bar/*.jpg isn't allowed.
+- The `\*' character must be only one.
+  e.g. /foo/\*/bar/*.jpg isn't allowed.
   
 - You can use the `*' character any part such as a part of directory
   name, file name or file name suffix.
