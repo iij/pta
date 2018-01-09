@@ -126,16 +126,16 @@ This byte stream is encrypted with the AES AES 128 bit CBC mode.
   +---------------+-------------------------+----------+-----------------+
 ```
 
-*** CRC32
+### CRC32
 It's big endian. It's calculated from the Expiration Time and URI Path.
 This part is used to check that AES decryption is valid.
 
-*** Expiration time
+### Expiration time
 It's big endian. It's compared with the time that request is arrived
 and if the time is less than or equal to the expiration time that is
 contained in the PTA token the request is permitted.
 
-*** URI Path
+### URI Path
 Basically it must be identical with the path of requested content.
 
   e.g.
@@ -144,10 +144,13 @@ Basically it must be identical with the path of requested content.
 It must be started from the slash `/'.
 
 The asterisk character `*' means wildcard.
+
 - The `*' character must be only one.
   e.g. "/foo/*/bar/*.jpg" isn't allowed.
+  
 - You can use the `*' character any part such as a part of directory
   name, file name or file name suffix.
+  
 - If you use the `*' character literally, you must escape it with the
   back slash `\'.
 
