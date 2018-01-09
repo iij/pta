@@ -118,10 +118,12 @@ format
 
 This byte stream is encrypted with the AES AES 128 bit CBC mode.
 
+```
   +---------------+-------------------------+----------+-----------------+
   | CRC32 (4byte) | Expiration Time (8byte) | URI Path | Padding         |
   |               | Unix Time format        |          | pkcs #7 format  |
   +---------------+-------------------------+----------+-----------------+
+```
 
 *** CRC32
 It's big endian. It's calculated from the Expiration Time and URI Path.
