@@ -16,12 +16,13 @@ for NGINX.
 
 e.g.
 
+```
   $ ./configure --add-module=/somewhere/pta
 
   $ make
 
   # make install
-
+```
 
 Usage
 =====
@@ -150,7 +151,9 @@ The asterisk character `*' means wildcard.
 - If you use the `*' character literally, you must escape it with the
   back slash `\'.
 
+<!--
 # Local Variables:
 # mode: auto-fill
 # coding: utf-8-unix
 # End:
+-->
