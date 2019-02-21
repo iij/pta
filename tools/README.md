@@ -5,14 +5,14 @@ ptapp.pl
 This command generates the PTA token with arbitrary parameters.
 
 Usage
-=====
+-----
 
 ```
     ptapp.pl --key 32HEXCHARACTERS --iv 32HEXCHARACTERS --date UNIXTIME --url URL
 ```
 
 Example
-=======
+-------
 
 ```
 % ./ptapp.pl --key 00112233445566778899aabbccddeeff --iv 00112233445566778899aabbccddeeff --date 1577804400 --url '/foo/bar.mp4'
