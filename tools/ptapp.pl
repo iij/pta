@@ -205,7 +205,7 @@ exit;
 		$self->{iv} .= sprintf "%02x", $self->{State}->[$r][$c];
 	    }
 	}
-	$self->{input} = substr($self->{input}, 32, 32);
+	$self->{input} = substr($self->{input}, 32);
     }
 
     sub _pkcs7_padding {
