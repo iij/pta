@@ -174,7 +174,7 @@ ngx_http_pta_delete_arg(ngx_http_request_t *r, char *arg, size_t len)
     if (*pos == '=') {
       ngx_http_arg(r, beg, pos - beg, &param);
 
-      if (!ngx_strnstr(beg, arg, len)) {
+      if (!ngx_strnstr(beg, arg, len) || beg[len] != '=') {
         ngx_str_t tmp;
         tmp.len = (pos - beg) + param.len + 1; /* `=' contains */;
         tmp.data = beg;
@@ -195,7 +195,7 @@ ngx_http_pta_delete_arg(ngx_http_request_t *r, char *arg, size_t len)
 
     pos++;
   }
-  
+
   return new;
 }
 
