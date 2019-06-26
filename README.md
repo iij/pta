@@ -106,6 +106,12 @@ Syntax  : pta_enable   on | off;
 Default : pta_enable off;
 Context : location
 
+pta_auth_method
+---------------
+Syntax  : pta_auth_method qs | cookie | qs cookie;
+Default : pta_auth_method qs;
+Context : location
+
 
 How it works
 ============
@@ -153,6 +159,18 @@ The asterisk character `*' means wildcard.
   
 - If you use the `*' character literally, you must escape it with the
   back slash.
+
+Query string and Cookie
+=======================
+
+pta_auth_method directive can specify the method to authenticate. 
+You can choose the type of query string, cookie, or both as the method.
+
+In case of both, query string is evaluated first, and then cookie
+is done if pta parameter isn't included in query string.
+When pta parameter in query string isn't valid the authentication 
+fails, not fallback to ealuate cookie. Only without pta parameter
+in query string cookie is evaluated.
 
 <!--
 # Local Variables:
