@@ -27,6 +27,7 @@ typedef struct {
 
 typedef struct {
   ngx_flag_t pta_onoff;
+  ngx_uint_t pta_auth_method;
 } ngx_http_pta_loc_conf_t;
 
 typedef struct {
@@ -55,6 +56,17 @@ static char *ngx_http_pta_set_1st_key(ngx_conf_t *, ngx_command_t *, void *);
 static char *ngx_http_pta_set_1st_iv(ngx_conf_t *, ngx_command_t *, void *);
 static char *ngx_http_pta_set_2nd_key(ngx_conf_t *, ngx_command_t *, void *);
 static char *ngx_http_pta_set_2nd_iv(ngx_conf_t *, ngx_command_t *, void *);
+
+#define NGX_IIJPTA_AUTH_QS     0x0002
+#define NGX_IIJPTA_AUTH_COOKIE 0x0004
+
+#define NGX_HTTP_PTA_FALLBACK  21
+
+static ngx_conf_bitmask_t ngx_http_secure_token_iijpta_auth_method[] = {
+    { ngx_string("qs"),     NGX_IIJPTA_AUTH_QS },
+    { ngx_string("cookie"), NGX_IIJPTA_AUTH_COOKIE },
+    { ngx_null_string, 0 }
+};
 
 static ngx_command_t ngx_http_pta_commands[] = {
   { ngx_string("pta_1st_key"),
@@ -87,6 +99,12 @@ static ngx_command_t ngx_http_pta_commands[] = {
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(ngx_http_pta_loc_conf_t, pta_onoff),
     NULL },
+  { ngx_string("pta_auth_method"),
+    NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
+    ngx_conf_set_bitmask_slot,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(ngx_http_pta_loc_conf_t, pta_auth_method),
+    &ngx_http_secure_token_iijpta_auth_method },
 
   ngx_null_command
 };
@@ -168,6 +186,10 @@ ngx_http_pta_delete_arg(ngx_http_request_t *r, char *arg, size_t len)
   ngx_str_t param;
 
   u_char *pos = r->args.data;;
+  if (pos == NULL) {
+      // no query string;
+      return NULL;
+  }
   u_char *beg = pos;
 
   while (pos <= &r->args.data[r->args.len]) {
@@ -195,7 +217,7 @@ ngx_http_pta_delete_arg(ngx_http_request_t *r, char *arg, size_t len)
 
     pos++;
   }
-  
+
   return new;
 }
 
@@ -251,12 +273,26 @@ ngx_http_pta_init(ngx_conf_t *cf)
 }
 
 static ngx_int_t
-ngx_http_pta_build_info(ngx_http_request_t *r, ngx_http_pta_info_t *pta)
+ngx_http_pta_build_info(ngx_http_request_t *r, ngx_http_pta_info_t *pta, uint8_t auth_type, uint8_t need_fallback)
 {
   ngx_int_t ret;
 
-  ret = ngx_http_arg(r, (u_char*)QUERY_PARAM, sizeof(QUERY_PARAM) - 1,
-                     &pta->encrypt_string);
+  if (auth_type == NGX_IIJPTA_AUTH_QS) {
+      ret = ngx_http_arg(r, (u_char*)QUERY_PARAM, sizeof(QUERY_PARAM) - 1,
+			 &pta->encrypt_string);
+  } else if (auth_type == NGX_IIJPTA_AUTH_COOKIE) {
+      ngx_str_t key = ngx_string("pta");
+      ret = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &key, &pta->encrypt_string);
+  } else {
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+		  "auth_type is invalid: %d", auth_type);
+    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+  }
+
+  if (need_fallback && ret) {
+      return NGX_HTTP_PTA_FALLBACK;
+  }
+
   if (ret) {
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
 		  "pta token is invalid #1");
@@ -302,8 +338,47 @@ ngx_http_pta_decrypt(ngx_http_request_t *r, ngx_http_pta_srv_conf_t *srvc,
   uint8_t  *out;
   uint8_t   key[16];
   uint8_t   iv[16];
+  uint8_t   auth_type;
+  uint8_t   need_fallback;
+  ngx_http_pta_loc_conf_t *loc;
 
-  ret = ngx_http_pta_build_info(r, pta);
+  if ((loc = ngx_http_get_module_loc_conf(r, ngx_http_pta_module)) == NULL) {
+    return NGX_DECLINED;
+  }
+
+  need_fallback = 0;
+  switch (loc->pta_auth_method) {
+      case NGX_IIJPTA_AUTH_QS:
+      {
+	  auth_type = NGX_IIJPTA_AUTH_QS;
+	  break;
+      }
+      case NGX_IIJPTA_AUTH_COOKIE:
+      {
+	  auth_type = NGX_IIJPTA_AUTH_COOKIE;
+	  break;
+      }
+      case NGX_IIJPTA_AUTH_QS|NGX_IIJPTA_AUTH_COOKIE:
+      {
+	  need_fallback = 1;
+	  auth_type = NGX_IIJPTA_AUTH_QS;
+	  break;
+      }
+      default:
+      {
+	  auth_type = NGX_IIJPTA_AUTH_QS;
+	  break;
+      }
+  }
+
+again:
+  ret = ngx_http_pta_build_info(r, pta, auth_type, need_fallback);
+  if (ret == NGX_HTTP_PTA_FALLBACK) {
+      need_fallback = 0;
+      auth_type = NGX_IIJPTA_AUTH_COOKIE;
+      goto again;
+  }
+
   if (ret) {
     return ret;
   }
@@ -460,7 +535,7 @@ ngx_http_pta_check_url(ngx_http_request_t *r, ngx_http_pta_info_t *pta)
   if (idx != r->uri.len) {
     return 1;
   }
-    
+
   return 0;
 }
 
@@ -475,7 +550,7 @@ ngx_http_pta_handler(ngx_http_request_t *r)
   if ((srv = ngx_http_get_module_srv_conf(r, ngx_http_pta_module)) == NULL) {
     return NGX_DECLINED;
   }
-  
+
   if ((loc = ngx_http_get_module_loc_conf(r, ngx_http_pta_module)) == NULL) {
     return NGX_DECLINED;
   }
@@ -515,7 +590,7 @@ ngx_http_pta_handler(ngx_http_request_t *r)
     r->unparsed_uri = *uri;
   } else {
     r->unparsed_uri = r->uri;
-  } 
+  }
 
   return NGX_DECLINED;
 }
@@ -523,7 +598,7 @@ ngx_http_pta_handler(ngx_http_request_t *r)
 static void *
 ngx_http_pta_create_srv_conf(ngx_conf_t *cf)
 {
-  ngx_http_pta_srv_conf_t *conf = 
+  ngx_http_pta_srv_conf_t *conf =
     ngx_pcalloc(cf->pool, sizeof(ngx_http_pta_srv_conf_t));
   if (conf == NULL) {
     return NGX_CONF_ERROR;
@@ -553,6 +628,7 @@ ngx_http_pta_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
   ngx_http_pta_loc_conf_t *conf = child;
 
   ngx_conf_merge_value(conf->pta_onoff, prev->pta_onoff, 0);
+  ngx_conf_merge_uint_value(conf->pta_auth_method, prev->pta_auth_method, 0);
 
   return NGX_CONF_OK;
 }
