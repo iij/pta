@@ -46,6 +46,10 @@ typedef struct
     uint8_t *encrypt_data;
     size_t encrypt_data_len;
     ngx_http_pta_data_t decrypt_data;
+    ngx_array_t *encrypt_data_array;
+    uint16_t encrypt_data_array_idx;
+    uint8_t need_fallback_cookie;
+    uint8_t auth_type;
 } ngx_http_pta_info_t;
 
 #define QUERY_PARAM  "pta"
@@ -61,8 +65,8 @@ static char *ngx_http_pta_set_1st_iv (ngx_conf_t *, ngx_command_t *, void *);
 static char *ngx_http_pta_set_2nd_key (ngx_conf_t *, ngx_command_t *, void *);
 static char *ngx_http_pta_set_2nd_iv (ngx_conf_t *, ngx_command_t *, void *);
 
-#define NGX_IIJPTA_AUTH_QS     0x0002
-#define NGX_IIJPTA_AUTH_COOKIE 0x0004
+#define NGX_IIJPTA_AUTH_QS          0x0002
+#define NGX_IIJPTA_AUTH_COOKIE      0x0004
 
 #define NGX_HTTP_PTA_FALLBACK  21
 
@@ -142,6 +146,90 @@ ngx_module_t ngx_http_pta_module = {
     NGX_MODULE_V1_PADDING
 };
 
+ngx_int_t
+ngx_http_pta_parse_cookie_header (ngx_array_t * headers, ngx_str_t * name,
+                                  ngx_array_t * values)
+{
+    ngx_uint_t i;
+    u_char *start, *last, *end, ch;
+    ngx_table_elt_t **h;
+    ngx_str_t *value;
+
+    h = headers->elts;
+
+    for (i = 0; i < headers->nelts; i++)
+      {
+          ngx_log_debug2 (NGX_LOG_DEBUG_HTTP, headers->pool->log, 0,
+                          "parse header: \"%V: %V\"", &h[i]->key,
+                          &h[i]->value);
+
+          if (name->len > h[i]->value.len)
+            {
+                continue;
+            }
+
+          start = h[i]->value.data;
+          end = h[i]->value.data + h[i]->value.len;
+
+          while (start < end)
+            {
+                if (ngx_strncasecmp (start, name->data, name->len) != 0)
+                  {
+                      goto skip;
+                  }
+
+                // skip space
+                for (start += name->len; start < end && *start == ' ';
+                     start++)
+                  {
+                      /* void */
+                  }
+
+                if (start == end || *start++ != '=')
+                  {
+                      goto skip;
+                  }
+
+                // skip space
+                while (start < end && *start == ' ')
+                  {
+                      start++;
+                  }
+
+                for (last = start; last < end && *last != ';'; last++)
+                  {
+                      /* void */
+                  }
+
+                value = ngx_array_push (values);
+                value->len = last - start;
+                value->data = start;
+
+                continue;
+
+              skip:
+
+                while (start < end)
+                  {
+                      ch = *start++;
+                      if (ch == ';')
+                        {
+                            break;
+                        }
+                  }
+
+                // skip space
+                while (start < end && *start == ' ')
+                  {
+                      start++;
+                  }
+            }
+
+      }
+
+    return i;
+}
+
 static ngx_str_t *
 ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * tmp,
                          ngx_str_t * new, char *delim)
@@ -190,28 +278,34 @@ ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * tmp,
 static ngx_str_t *
 ngx_http_pta_delete_arg (ngx_http_request_t * r, char *arg, size_t len)
 {
-  ngx_str_t *new = NULL;
-  ngx_str_t param;
+    ngx_str_t *new = NULL;
+    ngx_str_t param;
 
-  u_char *pos = r->args.data;;
-  if (pos == NULL) {
-      // no query string;
-      return NULL;
-  }
-  u_char *beg = pos;
+    u_char *pos = r->args.data;;
+    if (pos == NULL)
+      {
+          // no query string;
+          return NULL;
+      }
+    u_char *beg = pos;
 
-  while (pos <= &r->args.data[r->args.len]) {
-    if (*pos == '=') {
-      ngx_http_arg(r, beg, pos - beg, &param);
+    while (pos <= &r->args.data[r->args.len])
+      {
+          if (*pos == '=')
+            {
+                ngx_http_arg (r, beg, pos - beg, &param);
 
-      if (!ngx_strnstr(beg, arg, len) || beg[len] != '=') {
-        ngx_str_t tmp;
-        tmp.len = (pos - beg) + param.len + 1; /* `=' contains */;
-        tmp.data = beg;
-        new = ngx_http_pta_qparam_cat(r, &tmp, new, "&");
-        if (new == NULL) {
-          ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                        "ngx_http_pta_qparam_cat() failed");
+                if (!ngx_strnstr (beg, arg, len) || beg[len] != '=')
+                  {
+                      ngx_str_t tmp;
+                      tmp.len = (pos - beg) + param.len + 1;
+                      /* `=' contains */ ;
+                      tmp.data = beg;
+                      new = ngx_http_pta_qparam_cat (r, &tmp, new, "&");
+                      if (new == NULL)
+                        {
+                            ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                                           "ngx_http_pta_qparam_cat() failed");
                             return NULL;
                         }
                   }
@@ -287,41 +381,93 @@ ngx_http_pta_init (ngx_conf_t * cf)
 }
 
 static ngx_int_t
-ngx_http_pta_build_info (ngx_http_request_t * r, ngx_http_pta_info_t * pta,
-                         uint8_t auth_type, uint8_t need_fallback)
+ngx_http_pta_set_encrypt_data_array (ngx_http_request_t * r,
+                                     ngx_http_pta_info_t * pta)
 {
-    ngx_int_t ret;
+    ngx_str_t key = ngx_string ("pta");
 
-    if (auth_type == NGX_IIJPTA_AUTH_QS)
+    pta->encrypt_data_array = ngx_pcalloc (r->pool, sizeof (ngx_array_t));
+    if (pta->encrypt_data_array == NULL)
       {
+          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                         "can't allocate memory for enctypt_data_array");
+          return NGX_HTTP_INTERNAL_SERVER_ERROR;
+      }
+
+    if (ngx_array_init
+        (pta->encrypt_data_array, r->pool, 3, sizeof (ngx_str_t)) != NGX_OK)
+      {
+          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                         "can't init for enctypt_data_array");
+          return NGX_HTTP_INTERNAL_SERVER_ERROR;
+      }
+    ngx_http_pta_parse_cookie_header (&r->headers_in.cookies,
+                                      &key, pta->encrypt_data_array);
+    if (pta->encrypt_data_array->nelts == 0)
+      {
+          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                         "pta token is not found in cookie");
+          return NGX_HTTP_BAD_REQUEST;
+      }
+
+    return NGX_OK;
+}
+
+static ngx_int_t
+ngx_http_pta_build_info (ngx_http_request_t * r, ngx_http_pta_info_t * pta)
+{
+    ngx_int_t ret = 0;
+
+    if (pta->auth_type == NGX_IIJPTA_AUTH_QS)
+      {
+          pta->encrypt_data_array = NULL;
           ret =
               ngx_http_arg (r, (u_char *) QUERY_PARAM,
                             sizeof (QUERY_PARAM) - 1, &pta->encrypt_string);
+          if (pta->need_fallback_cookie && ret)
+            {
+                return NGX_HTTP_PTA_FALLBACK;
+            }
+          if (ret)
+            {
+                ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                               "pta token is invalid #1");
+                return NGX_HTTP_BAD_REQUEST;
+            }
       }
-    else if (auth_type == NGX_IIJPTA_AUTH_COOKIE)
+    else if (pta->auth_type == NGX_IIJPTA_AUTH_COOKIE)
       {
-          ngx_str_t key = ngx_string ("pta");
-          ret =
-              ngx_http_parse_multi_header_lines (&r->headers_in.cookies, &key,
-                                                 &pta->encrypt_string);
+          if (pta->encrypt_data_array == NULL)
+            {
+                ret = ngx_http_pta_set_encrypt_data_array (r, pta);
+                if (ret != NGX_OK)
+                  {
+                      return ret;
+                  }
+            }
+          if (pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
+            {
+                pta->encrypt_string.data =
+                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
+                                                                  encrypt_data_array_idx].
+                    data;
+                pta->encrypt_string.len =
+                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
+                                                                  encrypt_data_array_idx].
+                    len;
+            }
+          else
+            {
+                ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                               "valid pta token is not found in cookie");
+                return NGX_HTTP_BAD_REQUEST;
+            }
       }
     else
       {
           ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                         "auth_type is invalid: %d", auth_type);
+                         "auth_type is invalid: %d", pta->auth_type);
           return NGX_HTTP_INTERNAL_SERVER_ERROR;
-      }
-
-    if (need_fallback && ret)
-      {
-          return NGX_HTTP_PTA_FALLBACK;
-      }
-
-    if (ret)
-      {
-          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                         "pta token is invalid #1");
-          return NGX_HTTP_BAD_REQUEST;
       }
 
     if ((pta->encrypt_string.len % 2) != 0)
@@ -350,11 +496,48 @@ ngx_http_pta_build_info (ngx_http_request_t * r, ngx_http_pta_info_t * pta,
 
     pta->encrypt_data_len = pta->encrypt_string.len / 2;
 
+    ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
+                   "encrypt_string: %V auth_type: %s", &pta->encrypt_string,
+                   pta->auth_type ==
+                   NGX_IIJPTA_AUTH_QS ? "querystring" : "cookie");
     return 0;
 }
 
 static ngx_int_t
-ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srvc,
+ngx_http_pta_init_auth_type (ngx_http_request_t * r,
+                             ngx_http_pta_loc_conf_t * loc,
+                             ngx_http_pta_info_t * pta)
+{
+    switch (loc->pta_auth_method)
+      {
+      case NGX_IIJPTA_AUTH_QS:
+          {
+              pta->auth_type = NGX_IIJPTA_AUTH_QS;
+              break;
+          }
+      case NGX_IIJPTA_AUTH_COOKIE:
+          {
+              pta->auth_type = NGX_IIJPTA_AUTH_COOKIE;
+              break;
+          }
+      case NGX_IIJPTA_AUTH_QS | NGX_IIJPTA_AUTH_COOKIE:
+          {
+              pta->need_fallback_cookie = 1;
+              pta->auth_type = NGX_IIJPTA_AUTH_QS;
+              break;
+          }
+      default:
+          {
+              pta->auth_type = NGX_IIJPTA_AUTH_QS;
+              break;
+          }
+      }
+
+    return 0;
+}
+
+static ngx_int_t
+ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
                       ngx_http_pta_info_t * pta)
 {
     int idx;
@@ -365,50 +548,15 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srvc,
     uint8_t *out;
     uint8_t key[16];
     uint8_t iv[16];
-    uint8_t auth_type;
-    uint8_t need_fallback;
-    ngx_http_pta_loc_conf_t *loc;
-
-    if ((loc = ngx_http_get_module_loc_conf (r, ngx_http_pta_module)) == NULL)
-      {
-          return NGX_DECLINED;
-      }
-
-    need_fallback = 0;
-    switch (loc->pta_auth_method)
-      {
-      case NGX_IIJPTA_AUTH_QS:
-          {
-              auth_type = NGX_IIJPTA_AUTH_QS;
-              break;
-          }
-      case NGX_IIJPTA_AUTH_COOKIE:
-          {
-              auth_type = NGX_IIJPTA_AUTH_COOKIE;
-              break;
-          }
-      case NGX_IIJPTA_AUTH_QS | NGX_IIJPTA_AUTH_COOKIE:
-          {
-              need_fallback = 1;
-              auth_type = NGX_IIJPTA_AUTH_QS;
-              break;
-          }
-      default:
-          {
-              auth_type = NGX_IIJPTA_AUTH_QS;
-              break;
-          }
-      }
 
   again:
-    ret = ngx_http_pta_build_info (r, pta, auth_type, need_fallback);
+    ret = ngx_http_pta_build_info (r, pta);
     if (ret == NGX_HTTP_PTA_FALLBACK)
       {
-          need_fallback = 0;
-          auth_type = NGX_IIJPTA_AUTH_COOKIE;
+          pta->need_fallback_cookie = 0;
+          pta->auth_type = NGX_IIJPTA_AUTH_COOKIE;
           goto again;
       }
-
     if (ret)
       {
           return ret;
@@ -424,16 +572,16 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srvc,
 
     for (idx = 0; idx < 2; idx++)
       {
-          hex = (idx == 0) ? srvc->key_1st.data : srvc->key_2nd.data;
-          len = (idx == 0) ? srvc->key_1st.len : srvc->key_2nd.len;
+          hex = (idx == 0) ? srv->key_1st.data : srv->key_2nd.data;
+          len = (idx == 0) ? srv->key_1st.len : srv->key_2nd.len;
           ret = ngx_http_pta_hex2bin (hex, len, key);
           if (ret)
             {
                 continue;
             }
 
-          hex = (idx == 0) ? srvc->iv_1st.data : srvc->iv_2nd.data;
-          len = (idx == 0) ? srvc->iv_1st.len : srvc->iv_2nd.len;
+          hex = (idx == 0) ? srv->iv_1st.data : srv->iv_2nd.data;
+          len = (idx == 0) ? srv->iv_1st.len : srv->iv_2nd.len;
           ret = ngx_http_pta_hex2bin (hex, len, iv);
           if (ret)
             {
@@ -456,8 +604,18 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srvc,
             }
       }
 
+    if (pta->auth_type == NGX_IIJPTA_AUTH_COOKIE
+        && pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
+      {
+          pta->encrypt_data_array_idx++;
+          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                         "decrypt failed so checking next pta(index: %d)",
+                         pta->encrypt_data_array_idx);
+          goto again;
+      }
+
     ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                   "decrypt faild. check key and iv");
+                   "decrypt failed. check key and iv");
     return 403;                 /* decrypt failed */
 }
 
@@ -477,6 +635,11 @@ ngx_http_pta_check_crc (ngx_http_pta_info_t * pta)
     url_len = pta->encrypt_data_len
         - sizeof (pta->decrypt_data.crc)
         - sizeof (pta->decrypt_data.deadline) - pta->decrypt_data.padding_val;
+
+    if (url_len > 8192)
+      {
+          return 1;
+      }
 
     memcpy (raw, &pta->decrypt_data.deadline,
             sizeof (pta->decrypt_data.deadline));
@@ -621,6 +784,10 @@ ngx_http_pta_handler (ngx_http_request_t * r)
           return NGX_DECLINED;
       }
 
+    ngx_memzero (&pta, sizeof (pta));
+    ngx_http_pta_init_auth_type (r, loc, &pta);
+
+  more:
     ret = ngx_http_pta_decrypt (r, srv, &pta);
     if (ret)
       {
@@ -632,6 +799,15 @@ ngx_http_pta_handler (ngx_http_request_t * r)
       {
           ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
                          "request is expired");
+          if (pta.auth_type == NGX_IIJPTA_AUTH_COOKIE
+              && pta.encrypt_data_array_idx < pta.encrypt_data_array->nelts)
+            {
+                pta.encrypt_data_array_idx++;
+                ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                               "checking next pta(index: %d)",
+                               pta.encrypt_data_array_idx);
+                goto more;
+            }
           return 410;
       }
 
@@ -639,6 +815,15 @@ ngx_http_pta_handler (ngx_http_request_t * r)
     if (ret)
       {
           ngx_log_error (NGX_LOG_ERR, r->connection->log, 0, "url is ivalid");
+          if (pta.auth_type == NGX_IIJPTA_AUTH_COOKIE
+              && pta.encrypt_data_array_idx < pta.encrypt_data_array->nelts)
+            {
+                pta.encrypt_data_array_idx++;
+                ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                               "checking next pta(index: %d)",
+                               pta.encrypt_data_array_idx);
+                goto more;
+            }
           return 403;
       }
 
