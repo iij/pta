@@ -95,22 +95,22 @@ pta_2nd_key
 
 pta_2nd_iv
 ----------
-Syntax  : pta_2nd_iv   ivstring;
-Default : -
-Context : server
+- Syntax  : pta_2nd_iv   ivstring;
+- Default : -
+- Context : server
 
 
 pta_enable
 ----------
-Syntax  : pta_enable   on | off;
-Default : pta_enable off;
-Context : location
+- Syntax  : pta_enable   on | off;
+- Default : pta_enable off;
+- Context : location
 
 pta_auth_method
 ---------------
-Syntax  : pta_auth_method qs | cookie | qs cookie;
-Default : pta_auth_method qs;
-Context : location
+- Syntax  : pta_auth_method qs | cookie | qs cookie;
+- Default : pta_auth_method qs;
+- Context : location
 
 
 How it works
