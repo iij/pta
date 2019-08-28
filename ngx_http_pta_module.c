@@ -445,11 +445,13 @@ ngx_http_pta_build_info (ngx_http_request_t * r, ngx_http_pta_info_t * pta)
           if (pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
             {
                 pta->encrypt_string.data =
-                    ((ngx_str_t *) pta->encrypt_data_array->
-                     elts)[pta->encrypt_data_array_idx].data;
+                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
+                                                                  encrypt_data_array_idx].
+                    data;
                 pta->encrypt_string.len =
-                    ((ngx_str_t *) pta->encrypt_data_array->
-                     elts)[pta->encrypt_data_array_idx].len;
+                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
+                                                                  encrypt_data_array_idx].
+                    len;
             }
           else
             {
@@ -603,7 +605,7 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
         && pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
       {
           pta->encrypt_data_array_idx++;
-          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+          ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
                          "decrypt failed so checking next pta(index: %d)",
                          pta->encrypt_data_array_idx);
           goto again;
