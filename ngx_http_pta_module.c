@@ -231,7 +231,7 @@ ngx_http_pta_parse_cookie_header (ngx_array_t * headers, ngx_str_t * name,
 }
 
 static ngx_str_t *
-ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * tmp,
+ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * base,
                          ngx_str_t * new, char *delim)
 {
     u_char *ptr, *qtr;
@@ -243,8 +243,8 @@ ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * tmp,
           return NULL;
       }
 
-    ret->len = tmp->len
-        + ((new == NULL) ? 0 : new->len) + ((new == NULL) ? 0 : 1);
+    ret->len = ((base == NULL) ? 0 : base->len)
+        + new->len + ((base == NULL) ? 0 : 1);
 
     ret->data = ngx_pnalloc (r->pool, ret->len);
     if (ret->data == NULL)
@@ -252,19 +252,16 @@ ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * tmp,
           return NULL;
       }
 
-    ptr = tmp->data;
     qtr = ret->data;
-    while (ptr < &tmp->data[tmp->len])
+    if (base != NULL)
       {
-          *qtr++ = *ptr++;
+          ptr = base->data;
+          while (ptr < &base->data[base->len])
+            {
+                *qtr++ = *ptr++;
+            }
+          *qtr++ = *delim;
       }
-
-    if (new == NULL)
-      {
-          return ret;
-      }
-
-    *qtr++ = *delim;
 
     ptr = new->data;
     while (ptr < &new->data[new->len])
@@ -278,7 +275,7 @@ ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * tmp,
 static ngx_str_t *
 ngx_http_pta_delete_arg (ngx_http_request_t * r, char *arg, size_t len)
 {
-    ngx_str_t *new = NULL;
+    ngx_str_t *base = NULL;
     ngx_str_t param;
 
     u_char *pos = r->args.data;;
@@ -297,12 +294,12 @@ ngx_http_pta_delete_arg (ngx_http_request_t * r, char *arg, size_t len)
 
                 if (!ngx_strnstr (beg, arg, len) || beg[len] != '=')
                   {
-                      ngx_str_t tmp;
-                      tmp.len = (pos - beg) + param.len + 1;
+                      ngx_str_t new;
+                      new.len = (pos - beg) + param.len + 1;
                       /* `=' contains */ ;
-                      tmp.data = beg;
-                      new = ngx_http_pta_qparam_cat (r, &tmp, new, "&");
-                      if (new == NULL)
+                      new.data = beg;
+                      base = ngx_http_pta_qparam_cat (r, base, &new, "&");
+                      if (base == NULL)
                         {
                             ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
                                            "ngx_http_pta_qparam_cat() failed");
@@ -320,7 +317,7 @@ ngx_http_pta_delete_arg (ngx_http_request_t * r, char *arg, size_t len)
           pos++;
       }
 
-    return new;
+    return base;
 }
 
 static uint8_t
@@ -448,11 +445,13 @@ ngx_http_pta_build_info (ngx_http_request_t * r, ngx_http_pta_info_t * pta)
           if (pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
             {
                 pta->encrypt_string.data =
-                    ((ngx_str_t *) pta->encrypt_data_array->
-                     elts)[pta->encrypt_data_array_idx].data;
+                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
+                                                                  encrypt_data_array_idx].
+                    data;
                 pta->encrypt_string.len =
-                    ((ngx_str_t *) pta->encrypt_data_array->
-                     elts)[pta->encrypt_data_array_idx].len;
+                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
+                                                                  encrypt_data_array_idx].
+                    len;
             }
           else
             {
