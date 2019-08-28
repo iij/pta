@@ -403,7 +403,7 @@ ngx_http_pta_set_encrypt_data_array (ngx_http_request_t * r,
     if (pta->encrypt_data_array->nelts == 0)
       {
           ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                         "pta token is not found in cookie");
+                         "pta token is invalid #3");
           return NGX_HTTP_BAD_REQUEST;
       }
 
@@ -445,18 +445,16 @@ ngx_http_pta_build_info (ngx_http_request_t * r, ngx_http_pta_info_t * pta)
           if (pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
             {
                 pta->encrypt_string.data =
-                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
-                                                                  encrypt_data_array_idx].
-                    data;
+                    ((ngx_str_t *) pta->encrypt_data_array->
+                     elts)[pta->encrypt_data_array_idx].data;
                 pta->encrypt_string.len =
-                    ((ngx_str_t *) pta->encrypt_data_array->elts)[pta->
-                                                                  encrypt_data_array_idx].
-                    len;
+                    ((ngx_str_t *) pta->encrypt_data_array->
+                     elts)[pta->encrypt_data_array_idx].len;
             }
           else
             {
                 ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                               "valid pta token is not found in cookie");
+                               "pta token is invalid #4");
                 return NGX_HTTP_BAD_REQUEST;
             }
       }
