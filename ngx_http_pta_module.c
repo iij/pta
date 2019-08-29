@@ -818,7 +818,7 @@ ngx_http_pta_handler (ngx_http_request_t * r)
     ret = ngx_http_pta_check_url (r, &pta);
     if (ret)
       {
-          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0, "url is ivalid");
+          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0, "url is invalid");
           if (pta.auth_type == NGX_IIJPTA_AUTH_COOKIE)
             {
                 pta.encrypt_data_array_idx++;
