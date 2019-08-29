@@ -601,14 +601,17 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
             }
       }
 
-    if (pta->auth_type == NGX_IIJPTA_AUTH_COOKIE
-        && pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
+    if (pta->auth_type == NGX_IIJPTA_AUTH_COOKIE)
       {
           pta->encrypt_data_array_idx++;
-          ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
-                         "decrypt failed so checking next pta(index: %d)",
-                         pta->encrypt_data_array_idx);
-          goto again;
+          if (pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
+            {
+
+                ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
+                               "decrypt failed so checking next pta(index: %d)",
+                               pta->encrypt_data_array_idx);
+                goto again;
+            }
       }
 
     ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
