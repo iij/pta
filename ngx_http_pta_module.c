@@ -805,7 +805,7 @@ ngx_http_pta_handler (ngx_http_request_t * r)
                 if (pta.encrypt_data_array_idx <
                     pta.encrypt_data_array->nelts)
                   {
-                      ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                      ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
                                      "checking next pta(index: %d)",
                                      pta.encrypt_data_array_idx);
                       goto more;
@@ -825,7 +825,7 @@ ngx_http_pta_handler (ngx_http_request_t * r)
                 if (pta.encrypt_data_array_idx <
                     pta.encrypt_data_array->nelts)
                   {
-                      ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
+                      ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
                                      "checking next pta(index: %d)",
                                      pta.encrypt_data_array_idx);
                       goto more;
