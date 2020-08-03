@@ -9,6 +9,7 @@ Usage
 
 ```
     ptapp.pl --key 32HEXCHARACTERS --iv 32HEXCHARACTERS --date UNIXTIME --url URL
+    ptapp.pl --key 32HEXCHARACTERS --iv 32HEXCHARACTERS --cipher ENCRYPTEDSTRING
 ```
 
 Example
@@ -21,4 +22,10 @@ Example
  CRC: 0xede3729d (3991106205)
 ----
 9695ded82e25d717295f01af7905f5410ef9eb2f554217a1f5d2d4ca9ff00a1f
+```
+```
+% ./ptapp.pl --key 00112233445566778899aabbccddeeff --iv 00112233445566778899aabbccddeeff --cipher 9695ded82e25d717295f01af7905f5410ef9eb2f554217a1f5d2d4ca9ff00a1f
+CRC : 0xede3729d(3991106205)
+Date: Wed Jan  1 00:00:00 2020
+Path: /foo/bar.mp4
 ```
