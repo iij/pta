@@ -67,7 +67,7 @@ if (defined($cipher)) {
     $date = localtime($unixtime);
     warn " Date: $date\n";
     $date = pack("C*", (0, 0, 0, 0, (map {hex($_)}
-                                     unpack("(A2)*", sprintf("%x",$unixtime)))));
+                                     unpack("(A2)*", sprintf("%08x",$unixtime)))));
     $url = pack("C*", (map {ord($_)} unpack("(A1)*", $url)));
     warn " URL: $url\n";
     my $plain = $date . $url;
