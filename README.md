@@ -4,9 +4,8 @@ Overview
 
 PTA(Period of Time Authentication) module is a module for NGINX. Using
 PTA you can control access to your contents. PTA calcurates a
-encrypted query string that includes an expiration time and a path of
-the content.
-
+encrypted query string or cookie parameter that includes an expiration
+time and a path of the content.
 
 How to build
 ============
@@ -116,9 +115,11 @@ pta_auth_method
 How it works
 ============
 
-PTA module decrypts a query string starting from `pta=...' and check
-CRC32, expiration time and requested URI path embedded in it. So you
-need to generate PTA token and add it to a link as query string.
+PTA module decrypts a query string or cookie parameter starting from
+`pta=...' and check CRC32, expiration time and requested URI path
+embedded in it. So you need to generate PTA token and add it to a link
+as query string or cookie parameter. There are some codes under the
+smaples directory to generate PTA.
 
 format
 ------
