@@ -147,19 +147,23 @@ ngx_module_t ngx_http_pta_module = {
 };
 
 ngx_int_t
-ngx_http_pta_parse_cookie_header (ngx_array_t * headers, ngx_str_t * name,
+ngx_http_pta_parse_cookie_header (ngx_http_request_t * r, ngx_str_t * name,
                                   ngx_array_t * values)
 {
     ngx_uint_t i;
     u_char *start, *last, *end, ch;
-    ngx_table_elt_t **h;
     ngx_str_t *value;
 
+#if nginx_version < 1023000
+    ngx_array_t *headers;
+    ngx_table_elt_t **h;
+
+    headers = &r->headers_in.cookies;
     h = headers->elts;
 
     for (i = 0; i < headers->nelts; i++)
       {
-          ngx_log_debug2 (NGX_LOG_DEBUG_HTTP, headers->pool->log, 0,
+          ngx_log_debug2 (NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                           "parse header: \"%V: %V\"", &h[i]->key,
                           &h[i]->value);
 
@@ -170,6 +174,25 @@ ngx_http_pta_parse_cookie_header (ngx_array_t * headers, ngx_str_t * name,
 
           start = h[i]->value.data;
           end = h[i]->value.data + h[i]->value.len;
+#else
+    ngx_table_elt_t *headers, *h;
+
+    headers = r->headers_in.cookie;
+
+    for (h = headers, i = 0; h; h = headers->next, i++)
+      {
+          ngx_log_debug2 (NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                          "parse header: \"%V: %V\"", h->key,
+                          h->value);
+
+          if (name->len > h->value.len)
+            {
+                continue;
+            }
+
+          start = h->value.data;
+          end = h->value.data + h->value.len;
+#endif
 
           while (start < end)
             {
@@ -398,8 +421,7 @@ ngx_http_pta_set_encrypt_data_array (ngx_http_request_t * r,
                          "can't init for enctypt_data_array");
           return NGX_HTTP_INTERNAL_SERVER_ERROR;
       }
-    ngx_http_pta_parse_cookie_header (&r->headers_in.cookies,
-                                      &key, pta->encrypt_data_array);
+    ngx_http_pta_parse_cookie_header (r, &key, pta->encrypt_data_array);
     if (pta->encrypt_data_array->nelts == 0)
       {
           ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
