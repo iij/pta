@@ -179,7 +179,7 @@ ngx_http_pta_parse_cookie_header (ngx_http_request_t * r, ngx_str_t * name,
 
     headers = r->headers_in.cookie;
 
-    for (h = headers, i = 0; h; h = headers->next, i++)
+    for (h = headers, i = 0; h != NULL; h = headers->next, i++)
       {
           ngx_log_debug2 (NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                           "parse header: \"%V: %V\"", h->key,
