@@ -617,6 +617,10 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
             {
                 goto fail;
             }
+          if (!EVP_CIPHER_CTX_set_padding(ctx, 0))
+            {
+                goto fail;
+            }
           if (!EVP_DecryptUpdate(ctx, out, &out_len, pta->encrypt_data, pta->encrypt_data_len))
             {
                 goto fail;
