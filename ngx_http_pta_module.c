@@ -638,6 +638,8 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
           ret = ngx_http_pta_check_crc (pta);
           if (ret == 0)
             {
+                EVP_CIPHER_CTX_cleanup(ctx);
+                EVP_CIPHER_CTX_free(ctx);
                 return 0;
             }
       }
@@ -648,6 +650,11 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
           if (pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
             {
 
+                if (ctx != NULL)
+                  {
+                      EVP_CIPHER_CTX_cleanup(ctx);
+                      EVP_CIPHER_CTX_free(ctx);
+                  }
                 ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
                                "decrypt failed so checking next pta(index: %d)",
                                pta->encrypt_data_array_idx);
@@ -656,6 +663,11 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
       }
 
   fail:
+     if (ctx != NULL)
+       {
+           EVP_CIPHER_CTX_cleanup(ctx);
+           EVP_CIPHER_CTX_free(ctx);
+       }
     ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
                    "decrypt failed. check key and iv");
     return 403;                 /* decrypt failed */
