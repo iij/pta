@@ -858,17 +858,26 @@ ngx_http_pta_handler (ngx_http_request_t * r)
 
     ngx_log_error (NGX_LOG_DEBUG, r->connection->log, 0, "successful");
 
+    ngx_str_t unparsed_uri;
+    unparsed_uri.len = 2 * r->uri.len;
+    unparsed_uri.data = ngx_pnalloc(r->pool, unparsed_uri.len);
+    if (unparsed_uri.data == NULL) {
+      return NGX_ERROR;
+    }
+    u_char *p = (u_char *)ngx_escape_uri(unparsed_uri.data, r->uri.data, r->uri.len, NGX_ESCAPE_URI);
+    unparsed_uri.len = p - unparsed_uri.data;
+
     ngx_str_t *qs;
     qs = ngx_http_pta_delete_arg (r, "pta", sizeof ("pta") - 1);
     if (qs)
       {
           ngx_str_t *uri;
-          uri = ngx_http_pta_qparam_cat (r, &r->uri, qs, "?");
+          uri = ngx_http_pta_qparam_cat (r, &unparsed_uri, qs, "?");
           r->unparsed_uri = *uri;
       }
     else
       {
-          r->unparsed_uri = r->uri;
+          r->unparsed_uri = unparsed_uri;
       }
 
     return NGX_DECLINED;
