@@ -253,94 +253,36 @@ ngx_http_pta_parse_cookie_header (ngx_http_request_t * r, ngx_str_t * name,
     return i;
 }
 
-static ngx_str_t *
-ngx_http_pta_qparam_cat (ngx_http_request_t * r, ngx_str_t * base,
-                         ngx_str_t * new, char *delim)
+static void
+ngx_http_pta_delete_arg (ngx_http_request_t * r)
 {
-    u_char *ptr, *qtr;
-    ngx_str_t *ret;
-
-    ret = ngx_pnalloc (r->pool, sizeof (ngx_str_t));
-    if (ret == NULL)
-      {
-          return NULL;
-      }
-
-    ret->len = ((base == NULL) ? 0 : base->len)
-        + new->len + ((base == NULL) ? 0 : 1);
-
-    ret->data = ngx_pnalloc (r->pool, ret->len);
-    if (ret->data == NULL)
-      {
-          return NULL;
-      }
-
-    qtr = ret->data;
-    if (base != NULL)
-      {
-          ptr = base->data;
-          while (ptr < &base->data[base->len])
-            {
-                *qtr++ = *ptr++;
-            }
-          *qtr++ = *delim;
-      }
-
-    ptr = new->data;
-    while (ptr < &new->data[new->len])
-      {
-          *qtr++ = *ptr++;
-      }
-
-    return ret;
-}
-
-static ngx_str_t *
-ngx_http_pta_delete_arg (ngx_http_request_t * r, char *arg, size_t len)
-{
-    ngx_str_t *base = NULL;
+    ngx_str_t target = ngx_string("pta");
     ngx_str_t param;
 
-    u_char *pos = r->args.data;;
-    if (pos == NULL)
-      {
-          // no query string;
-          return NULL;
-      }
-    u_char *beg = pos;
-
-    while (pos <= &r->args.data[r->args.len])
-      {
-          if (*pos == '=')
-            {
-                ngx_http_arg (r, beg, pos - beg, &param);
-
-                if (!ngx_strnstr (beg, arg, len) || beg[len] != '=')
-                  {
-                      ngx_str_t new;
-                      new.len = (pos - beg) + param.len + 1;
-                      /* `=' contains */ ;
-                      new.data = beg;
-                      base = ngx_http_pta_qparam_cat (r, base, &new, "&");
-                      if (base == NULL)
-                        {
-                            ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                                           "ngx_http_pta_qparam_cat() failed");
-                            return NULL;
-                        }
-                  }
-
-                pos++;          /* pos indicates the first char of value next to `=' */
-                pos += param.len + 1;   /* `&' contains */
-                beg = pos;      /* pos and beg indicates the next param */
-
-                continue;
-            }
-
-          pos++;
-      }
-
-    return base;
+    while (r->args.data != NULL && r->args.len > 0 &&
+           ngx_http_arg(r, target.data, target.len, &param) == NGX_OK) {
+        u_char *beg = param.data - target.len - 1;
+        u_char *end = param.data + param.len;
+        if (r->args.data < beg && *(beg - 1) == '&') {
+            beg--;
+        } else if (*end == '&') {
+            end++;
+        }
+        // Remove target parameter key & value, and reduce the length of unparsed_uri.
+        // Note that if args is not part of unparsed_uri at this point,
+        // unparsed_uri will show strange values.
+        if (beg <= r->args.data && end >= r->args.data + r->args.len) {
+            // args is lost
+            r->unparsed_uri.len = r->args.data - r->unparsed_uri.data - 1;
+            r->args.len = 0;
+            r->args.data = NULL;
+        } else {
+            memmove(beg, end, r->args.len - (end - r->args.data));
+            size_t remove_size = end - beg;
+            r->args.len -= remove_size;
+            r->unparsed_uri.len -= remove_size;
+        }
+    }
 }
 
 static uint8_t
@@ -858,27 +800,7 @@ ngx_http_pta_handler (ngx_http_request_t * r)
 
     ngx_log_error (NGX_LOG_DEBUG, r->connection->log, 0, "successful");
 
-    ngx_str_t unparsed_uri;
-    unparsed_uri.len = 2 * r->uri.len;
-    unparsed_uri.data = ngx_pnalloc(r->pool, unparsed_uri.len);
-    if (unparsed_uri.data == NULL) {
-      return NGX_ERROR;
-    }
-    u_char *p = (u_char *)ngx_escape_uri(unparsed_uri.data, r->uri.data, r->uri.len, NGX_ESCAPE_URI);
-    unparsed_uri.len = p - unparsed_uri.data;
-
-    ngx_str_t *qs;
-    qs = ngx_http_pta_delete_arg (r, "pta", sizeof ("pta") - 1);
-    if (qs)
-      {
-          ngx_str_t *uri;
-          uri = ngx_http_pta_qparam_cat (r, &unparsed_uri, qs, "?");
-          r->unparsed_uri = *uri;
-      }
-    else
-      {
-          r->unparsed_uri = unparsed_uri;
-      }
+    ngx_http_pta_delete_arg(r);
 
     return NGX_DECLINED;
 }
