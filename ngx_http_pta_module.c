@@ -638,43 +638,28 @@ ngx_http_pta_check_deadline (ngx_http_pta_info_t * pta)
 
 static ngx_int_t
 ngx_http_pta_check_wildcard_url (ngx_http_request_t * r,
-                                 ngx_http_pta_info_t * pta, size_t idx)
+                                 ngx_http_pta_info_t * pta,
+                                 size_t wdx, size_t idx)
 {
-    size_t wdx = ++idx;
-    if (pta->decrypt_data.url[idx] == pta->decrypt_data.padding_val)
-      {
-          return 0;
-      }
-    while (idx < r->uri.len && r->uri.data[idx] != pta->decrypt_data.url[wdx])
-      {
-          idx++;
-      }
-    if (idx > r->uri.len)
-      {
-          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                         "wildcard mismatch #1");
-          return 1;
-      }
-    while (pta->decrypt_data.url[wdx] != pta->decrypt_data.padding_val)
-      {
-          if (r->uri.data[idx] != pta->decrypt_data.url[wdx])
-            {
-                ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                               "wildcard mismatch #2");
-                return 1;
-            }
-          wdx++;
-          idx++;
-      }
-
-    if (idx != r->uri.len)
-      {
-          ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
-                         "wildcard mismatch #3");
-          return 1;
-      }
-
-    return 0;
+    u_char *beg = pta->decrypt_data.url + wdx + 1;
+    size_t len = 0;
+    while (*(beg + len) != pta->decrypt_data.padding_val) {
+        len++;
+    }
+    if (len == 0) {
+        // Trailing wildcard
+        return 0;
+    }
+    if (r->uri.len - idx < len) {
+        // Wildcards in the middle of a string require at least zero character
+        ngx_log_error (NGX_LOG_ERR, r->connection->log, 0, "wildcard mismatch: do not enough length.");
+        return 1;
+    }
+    if (strncmp(r->uri.data + r->uri.len - len, beg, len) == 0) {
+        return 0;
+    }
+    ngx_log_error (NGX_LOG_ERR, r->connection->log, 0, "wildcard mismatch: do not match string on the right side.");
+    return 1;
 }
 
 static ngx_int_t
@@ -702,7 +687,7 @@ ngx_http_pta_check_url (ngx_http_request_t * r, ngx_http_pta_info_t * pta)
             }
           if (ast == 0 && pta->decrypt_data.url[wdx] == '*')
             {
-                return ngx_http_pta_check_wildcard_url (r, pta, wdx);
+                return ngx_http_pta_check_wildcard_url (r, pta, wdx, idx);
             }
           if (r->uri.data[idx] != pta->decrypt_data.url[wdx])
             {
