@@ -14,7 +14,7 @@
 #include <ngx_config.h>
 #include <ngx_http_request.h>
 
-#include <openssl/aes.h>
+#include <openssl/evp.h>
 
 #include <syslog.h>
 
@@ -503,12 +503,14 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
 {
     int idx;
     ngx_int_t ret;
-    AES_KEY aeskey;
     u_char *hex;
     size_t len;
     uint8_t *out;
     uint8_t key[16];
     uint8_t iv[16];
+    int out_len = 0;
+    int last = 0;
+    EVP_CIPHER_CTX *ctx = NULL;
 
   again:
     ret = ngx_http_pta_build_info (r, pta);
@@ -548,10 +550,27 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
             {
                 continue;
             }
-
-          AES_set_decrypt_key (key, 128, &aeskey);
-          AES_cbc_encrypt (pta->encrypt_data, out, pta->encrypt_data_len,
-                           &aeskey, iv, AES_DECRYPT);
+          ctx = EVP_CIPHER_CTX_new();
+          if (ctx == NULL)
+            {
+                goto fail;
+            }
+          if (!EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv))
+            {
+                goto fail;
+            }
+          if (!EVP_CIPHER_CTX_set_padding(ctx, 0))
+            {
+                goto fail;
+            }
+          if (!EVP_DecryptUpdate(ctx, out, &out_len, pta->encrypt_data, pta->encrypt_data_len))
+            {
+                goto fail;
+            }
+          if (!EVP_DecryptFinal_ex(ctx, out + out_len, &last))
+            {
+                goto fail;
+            }
 
           pta->decrypt_data.crc = be32toh (*(uint32_t *) & out[0]);
           pta->decrypt_data.deadline = *(time_t *) & out[4];
@@ -561,6 +580,8 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
           ret = ngx_http_pta_check_crc (pta);
           if (ret == 0)
             {
+                EVP_CIPHER_CTX_cleanup(ctx);
+                EVP_CIPHER_CTX_free(ctx);
                 return 0;
             }
       }
@@ -571,6 +592,11 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
           if (pta->encrypt_data_array_idx < pta->encrypt_data_array->nelts)
             {
 
+                if (ctx != NULL)
+                  {
+                      EVP_CIPHER_CTX_cleanup(ctx);
+                      EVP_CIPHER_CTX_free(ctx);
+                  }
                 ngx_log_error (NGX_LOG_INFO, r->connection->log, 0,
                                "decrypt failed so checking next pta(index: %d)",
                                pta->encrypt_data_array_idx);
@@ -578,6 +604,12 @@ ngx_http_pta_decrypt (ngx_http_request_t * r, ngx_http_pta_srv_conf_t * srv,
             }
       }
 
+  fail:
+     if (ctx != NULL)
+       {
+           EVP_CIPHER_CTX_cleanup(ctx);
+           EVP_CIPHER_CTX_free(ctx);
+       }
     ngx_log_error (NGX_LOG_ERR, r->connection->log, 0,
                    "decrypt failed. check key and iv");
     return 403;                 /* decrypt failed */
